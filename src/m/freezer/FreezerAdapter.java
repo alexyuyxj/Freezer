@@ -1,7 +1,5 @@
 package m.freezer;
 
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,6 +11,9 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.drawable.Drawable;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.Message;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -39,6 +40,7 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 	private ArrayList<Object> items;
 	private PackageManager pm;
 	private Dialog pd;
+	private Process p;
 
 	public FreezerAdapter(ListView view) {
 		this.view = view;
@@ -340,54 +342,27 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 			public void run() {
 				PackageInfo pi = (PackageInfo) v.getTag();
 				if (pi.applicationInfo.enabled) {
-					exec(pi.packageName, "disable");
+					exec(pi.packageName, false);
 				} else {
-					exec(pi.packageName, "enable");
+					exec(pi.packageName, true);
 				}
 			}
 		}.start();
 	}
 	
-	private void exec(final String packageName, String state) {
+	private void exec(String packageName, boolean toEnable) {
 		try {
-			final Process p = Runtime.getRuntime().exec("su");
+			refreshState(packageName, toEnable);
+			if (p == null) {
+				p = Runtime.getRuntime().exec("su");
+			}
 			OutputStream os = p.getOutputStream();
-			String cmd = "pm " + state + " " + packageName + "\nexit\n";
+			String state = toEnable ? "enable" : "disable";
+			String cmd = "pm " + state + " " + packageName + "\n";
 			os.write(cmd.getBytes("ASCII"));
 			os.flush();
-			InputStreamReader isr = new InputStreamReader(p.getInputStream());
-			BufferedReader br = new BufferedReader(isr);
-			String line = br.readLine();
-			while (line != null) {
-				System.out.println(line);
-				line = br.readLine();
-			}
-			
-			view.postDelayed(new Runnable() {
-				public void run() {
-					p.destroy();
-					
-					@SuppressWarnings("unchecked")
-					ArrayList<String> pkgs = (ArrayList<String>) SPHelper.get(context, "recents");
-					if (pkgs == null) {
-						pkgs = new ArrayList<String>();
-					}
-					if (pkgs.contains(packageName)) {
-						pkgs.remove(packageName);
-					}
-					pkgs.add(0, packageName);
-					while (pkgs.size() > 5) {
-						pkgs.remove(pkgs.size() - 1);
-					}
-					SPHelper.put(context, "recents", pkgs);
-					
-					genList();
-					if (pd != null && pd.isShowing()) {
-						pd.dismiss();
-					}
-				}
-			}, 5000);
 		} catch (Throwable e) {
+			destroy();
 			view.post(new Runnable() {
 				public void run() {
 					if (pd != null && pd.isShowing()) {
@@ -399,6 +374,41 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 		}
 	}
 	
+	private void refreshState(final String packageName, final boolean toEnable) {
+		Handler handler = new Handler(Looper.getMainLooper()) {
+			public void handleMessage(Message msg) {
+				try {
+					PackageInfo pi = pm.getPackageInfo(packageName, 0);
+					if ((toEnable && pi.applicationInfo.enabled)
+							|| (!toEnable && !pi.applicationInfo.enabled)) {
+						removeMessages(1);
+						@SuppressWarnings("unchecked")
+						ArrayList<String> pkgs = (ArrayList<String>) SPHelper.get(context, "recents");
+						if (pkgs == null) {
+							pkgs = new ArrayList<String>();
+						}
+						if (pkgs.contains(packageName)) {
+							pkgs.remove(packageName);
+						}
+						pkgs.add(0, packageName);
+						while (pkgs.size() > 5) {
+							pkgs.remove(pkgs.size() - 1);
+						}
+						SPHelper.put(context, "recents", pkgs);
+						
+						genList();
+						if (pd != null && pd.isShowing()) {
+							pd.dismiss();
+						}
+						return;
+					}
+				} catch (Throwable t) {}
+				sendEmptyMessageDelayed(1, 100);
+			}
+		};
+		handler.sendEmptyMessageDelayed(1, 100);
+	}
+	
 	private Dialog getProgressDialog() {
 		ProgressBar pb = new ProgressBar(context);
 		int dp_10 = (int) (context.getResources().getDisplayMetrics().density * 10f + 0.5f);
@@ -408,6 +418,14 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 		pd.setCancelable(false);
 		pd.setContentView(pb);
 		return pd;
+	}
+	
+	public void destroy() {
+		if (p != null) {
+			Process pp = p;
+			p = null;
+			pp.destroy();
+		}
 	}
 	
 }

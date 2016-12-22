@@ -7,6 +7,7 @@ import android.view.View;
 import android.widget.ListView;
 
 public class MainActivity extends Activity {
+	private FreezerAdapter adapter;
 	
 	protected void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -21,9 +22,16 @@ public class MainActivity extends Activity {
 		lv.setDividerHeight((int) (getResources().getDisplayMetrics().density + 0.5f));
 		setContentView(lv);
 		
-		FreezerAdapter adapter = new FreezerAdapter(lv);
+		adapter = new FreezerAdapter(lv);
 		lv.setAdapter(adapter);
 		adapter.genList();
+	}
+	
+	public void finish() {
+		if (adapter != null) {
+			adapter.destroy();
+		}
+		super.finish();
 	}
 	
 }
