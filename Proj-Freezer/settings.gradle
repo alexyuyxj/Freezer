@@ -1,0 +1,2 @@
+include ':Freezer'
+project(':Freezer').projectDir = new File('../Freezer')
