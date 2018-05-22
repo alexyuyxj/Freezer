@@ -18,6 +18,7 @@ public class MainActivity extends Activity {
 		ListView lv = new ListView(this);
 		lv.setBackgroundColor(0xffffffff);
 		lv.setCacheColorHint(0);
+		lv.setSelector(new ColorDrawable());
 		lv.setDivider(new ColorDrawable(0xffe8e8e8));
 		lv.setDividerHeight((int) (getResources().getDisplayMetrics().density + 0.5f));
 		setContentView(lv);
