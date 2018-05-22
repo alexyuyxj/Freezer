@@ -13,7 +13,7 @@ import android.util.Base64;
 
 public class SPHelper {
 	private static final String NAME = "recent";
-	private static final int VERSION = 1;
+	private static final int VERSION = 2;
 	private static SharedPreferences prefrence;
 	
 	private static final synchronized void ensureNotNull(Context context) {

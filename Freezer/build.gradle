@@ -1,6 +1,2 @@
 apply plugin: 'com.android.application'
 apply plugin: 'com.mob.eclipsemodule'
-
-EclipseModule {
-	debug true
-}

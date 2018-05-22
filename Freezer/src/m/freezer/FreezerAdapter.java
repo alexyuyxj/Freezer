@@ -1,10 +1,5 @@
 package m.freezer;
 
-import java.io.OutputStream;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-
 import android.app.Dialog;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
@@ -30,11 +25,20 @@ import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
+import java.io.OutputStream;
+import java.util.AbstractMap.SimpleEntry;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map.Entry;
+
 public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickListener {
 	private ListView view;
 	private Context context;
 	private HashMap<PackageInfo, Drawable> icons;
-	private ArrayList<PackageInfo> recents;
+	private ArrayList<PackageInfo> recent;
 	private ArrayList<PackageInfo> users;
 	private ArrayList<PackageInfo> systems;
 	private ArrayList<Object> items;
@@ -47,7 +51,7 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 		this.context = view.getContext();
 		icons = new HashMap<PackageInfo, Drawable>();
 		items = new ArrayList<Object>();
-		recents = new ArrayList<PackageInfo>();
+		recent = new ArrayList<PackageInfo>();
 		users = new ArrayList<PackageInfo>();
 		systems = new ArrayList<PackageInfo>();
 		pm = context.getPackageManager();
@@ -65,8 +69,8 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 	public void run() {
 		try {
 			fillLists();
-			ArrayList<String> recentsPkgs = getRecentPackages();
-			fillRecents(recentsPkgs);
+			ArrayList<Entry<String, Integer>> recentPkgs = getRecentPackages();
+			fillRecents(recentPkgs);
 			fillItemData();
 			view.post(new Runnable() {
 				public void run() {
@@ -85,9 +89,21 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 	}
 	
 	private void fillLists() throws Throwable {
+		List<PackageInfo> pis = pm.getInstalledPackages(0);
+		Collections.sort(pis, new Comparator<PackageInfo>() {
+			public int compare(PackageInfo lpi, PackageInfo rpi) {
+				String left = String.valueOf(lpi.applicationInfo.loadLabel(pm));
+				left = TextUtils.isEmpty(left) ? lpi.packageName : left;
+				
+				String right = String.valueOf(rpi.applicationInfo.loadLabel(pm));
+				right = TextUtils.isEmpty(right) ? rpi.packageName : right;
+				
+				return left.compareTo(right);
+			}
+		});
+		
 		systems.clear();
 		users.clear();
-		List<PackageInfo> pis = pm.getInstalledPackages(0);
 		String myPkg = context.getPackageName();
 		for (PackageInfo pi : pis) {
 			if (!pi.applicationInfo.packageName.equals(myPkg)) {
@@ -100,46 +116,80 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 		}
 	}
 	
-	private ArrayList<String> getRecentPackages() {
+	private ArrayList<Entry<String, Integer>> getRecentPackages() {
 		@SuppressWarnings("unchecked")
-		ArrayList<String> pkgs = (ArrayList<String>) SPHelper.get(context, "recents");
-		ArrayList<String> recentsPkgs = new ArrayList<String>();
-		if (pkgs != null) {
-			for (String pkg : pkgs) {
-				boolean found = false;
-				for (PackageInfo pi : systems) {
+		HashMap<String, Integer> map = (HashMap<String, Integer>) SPHelper.get(context, "recents");
+		ArrayList<Entry<String, Integer>> recent = new ArrayList<Entry<String, Integer>>();
+		if (map != null) {
+			recent.addAll(map.entrySet());
+		}
+		
+		ArrayList<SimpleEntry<PackageInfo, Entry<String, Integer>>> pis
+				= new ArrayList<SimpleEntry<PackageInfo, Entry<String, Integer>>>();
+		for (Entry<String, Integer> e : recent) {
+			String pkg = e.getKey();
+			PackageInfo tpi = null;
+			for (PackageInfo pi : systems) {
+				if (pi.packageName.equals(pkg)) {
+					tpi = pi;
+					break;
+				}
+			}
+			if (tpi == null) {
+				for (PackageInfo pi : users) {
 					if (pi.packageName.equals(pkg)) {
-						found = true;
+						tpi = pi;
 						break;
 					}
 				}
-				if (!found) {
-					for (PackageInfo pi : users) {
-						if (pi.packageName.equals(pkg)) {
-							found = true;
-							break;
-						}
-					}
-				}
-				if (found) {
-					recentsPkgs.add(pkg);
+			}
+			if (tpi != null) {
+				pis.add(new SimpleEntry<PackageInfo, Entry<String, Integer>>(tpi, e));
+			}
+		}
+		
+		Collections.sort(pis, new Comparator<SimpleEntry<PackageInfo, Entry<String, Integer>>>() {
+			public int compare(SimpleEntry<PackageInfo, Entry<String, Integer>> left,
+					SimpleEntry<PackageInfo, Entry<String, Integer>> right) {
+				Entry<String, Integer> le = left.getValue();
+				Entry<String, Integer> re = right.getValue();
+				int li = le.getValue();
+				int ri = re.getValue();
+				if (li == ri) {
+					PackageInfo lpi = left.getKey();
+					String ln = String.valueOf(lpi.applicationInfo.loadLabel(pm));
+					ln = TextUtils.isEmpty(ln) ? lpi.packageName : ln;
+					PackageInfo rpi = right.getKey();
+					String rn = String.valueOf(rpi.applicationInfo.loadLabel(pm));
+					rn = TextUtils.isEmpty(rn) ? rpi.packageName : rn;
+					return ln.compareTo(rn);
+				} else {
+					return li < ri ? 1 : -1;
 				}
 			}
-			SPHelper.put(context, "recents", recentsPkgs);
+		});
+		while (pis.size() > 5) {
+			pis.remove(pis.size() - 1);
 		}
-		return recentsPkgs;
+		
+		ArrayList<Entry<String, Integer>> recentPkgs = new ArrayList<Entry<String, Integer>>();
+		for (SimpleEntry<PackageInfo, Entry<String, Integer>> e : pis) {
+			recentPkgs.add(e.getValue());
+		}
+		return recentPkgs;
 	} 
 	
-	private void fillRecents(ArrayList<String> recentsPkgs) {
-		recents.clear();
-		for (String pkg : recentsPkgs) {
+	private void fillRecents(ArrayList<Entry<String, Integer>> recentsPkgs) {
+		recent.clear();
+		for (Entry<String, Integer> e : recentsPkgs) {
+			String pkg = e.getKey();
 			boolean found = false;
 			int i = 0;
 			while (i < systems.size()) {
 				PackageInfo pi = systems.get(i);
 				if (pi.packageName.equals(pkg)) {
 					systems.remove(i);
-					recents.add(pi);
+					recent.add(pi);
 					found = true;
 					break;
 				}
@@ -151,7 +201,7 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 					PackageInfo pi = users.get(i);
 					if (pi.packageName.equals(pkg)) {
 						users.remove(i);
-						recents.add(pi);
+						recent.add(pi);
 						break;
 					}
 					i++;
@@ -162,18 +212,18 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 	
 	private void fillItemData() {
 		items.clear();
-		if (recents.size() > 0) {
+		if (recent.size() > 0) {
 			items.add("Recent");
+			items.addAll(recent);
 		}
-		items.addAll(recents);
 		if (users.size() > 0) {
 			items.add("User");
+			items.addAll(users);
 		}
-		items.addAll(users);
 		if (systems.size() > 0) {
 			items.add("System");
+			items.addAll(systems);
 		}
-		items.addAll(systems);
 	}
 	
 	public int getCount() {
@@ -383,18 +433,16 @@ public class FreezerAdapter extends BaseAdapter implements Runnable, OnClickList
 							|| (!toEnable && !pi.applicationInfo.enabled)) {
 						removeMessages(1);
 						@SuppressWarnings("unchecked")
-						ArrayList<String> pkgs = (ArrayList<String>) SPHelper.get(context, "recents");
-						if (pkgs == null) {
-							pkgs = new ArrayList<String>();
+						HashMap<String, Integer> map = (HashMap<String, Integer>) SPHelper.get(context, "recents");
+						if (map == null) {
+							map = new HashMap<String, Integer>();
 						}
-						if (pkgs.contains(packageName)) {
-							pkgs.remove(packageName);
+						if (map.containsKey(packageName)) {
+							map.put(packageName, map.get(packageName) + 1);
+						} else {
+							map.put(packageName, 1);
 						}
-						pkgs.add(0, packageName);
-						while (pkgs.size() > 5) {
-							pkgs.remove(pkgs.size() - 1);
-						}
-						SPHelper.put(context, "recents", pkgs);
+						SPHelper.put(context, "recents", map);
 						
 						genList();
 						if (pd != null && pd.isShowing()) {
